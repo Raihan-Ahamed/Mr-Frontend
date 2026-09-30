@@ -444,17 +444,13 @@ function FavButton({ active, onClick }) {
   )
 }
 
-// Full-size photo (fills the whole card image area) or an emoji plate when there is no photo
+// Full-size photo (fills the whole card image area) or an emoji plate when there is no photo.
+// Sizing/cropping is handled in styles.css (.photo-fill); PHOTO_FIT controls cover/contain.
 function Plate({ image, alt, icon }) {
   if (image) {
     return (
-      <div className="photo-fill" style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, overflow: 'hidden', zIndex: 0 }}>
-        <img
-          src={image}
-          alt={alt}
-          loading="lazy"
-          style={{ display: 'block', width: '100%', height: '100%', maxWidth: 'none', maxHeight: 'none', objectFit: PHOTO_FIT, borderRadius: 0, boxShadow: 'none' }}
-        />
+      <div className="photo-fill">
+        <img src={image} alt={alt} loading="lazy" style={{ objectFit: PHOTO_FIT }} />
       </div>
     )
   }
@@ -529,7 +525,7 @@ function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, m
                 goPage('menu')
               }}
             >
-              <div className="category-card__image" style={{ position: 'relative', overflow: 'hidden' }}>
+              <div className="category-card__image">
                 <Plate image={c.image} alt={c.name} icon={c.icon} />
               </div>
               <div className="category-card__label"><p>{c.name}</p></div>
@@ -545,7 +541,7 @@ function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, m
             const price = item.sizes ? Object.values(item.sizes)[0] : item.price
             return (
               <div className="bestseller-card reveal" key={item.id} style={{ transitionDelay: `${i * 0.08}s` }}>
-                <div className="bestseller-card__image" style={{ position: 'relative', overflow: 'hidden' }}>
+                <div className="bestseller-card__image">
                   <ItemPlate item={item} categories={categories} />
                   <FavButton active={favorites.has(item.id)} onClick={(e) => toggleFav(item.id, e)} />
                 </div>
@@ -622,7 +618,7 @@ function MenuPage({
           const price = priceOf(item, size)
           return (
             <div className="item-card reveal" key={item.id} style={{ transitionDelay: `${Math.min(i * 0.05, 0.5)}s` }}>
-              <div className="item-card__image" style={{ position: 'relative', overflow: 'hidden' }}>
+              <div className="item-card__image">
                 {item.isSpecial && (
                   <span className="special-ribbon" style={{ zIndex: 2 }}><Icon name="fire" /> Today's Special</span>
                 )}
