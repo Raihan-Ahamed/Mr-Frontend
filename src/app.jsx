@@ -18,21 +18,6 @@ const CONFETTI_COLORS = ['#0b4fa8', '#e53935', '#ffc107', '#c9a24b', '#25D366']
 const SIZE_ORDER = ['reg', 'med', 'lar']
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:4000').replace(/\/$/, '')
 
-// Photo fills the WHOLE card image area (no small circle / no frame)
-const PHOTO_FRAME_STYLE = {
-  width: '100%',
-  height: '100%',
-  maxWidth: 'none',
-  maxHeight: 'none',
-  aspectRatio: 'auto',
-  margin: 0,
-  padding: 0,
-  border: 'none',
-  borderRadius: 0,
-  boxShadow: 'none',
-  background: 'none',
-  overflow: 'hidden',
-}
 // 'cover' = card fully filled (edges may crop). Change to 'contain' to show the whole image uncropped.
 const PHOTO_FIT = 'cover'
 
@@ -453,7 +438,7 @@ function Footer() {
 /* ---------------- PAGES ---------------- */
 function FavButton({ active, onClick }) {
   return (
-    <button className={`fav-btn ${active ? 'active' : ''}`} onClick={onClick} aria-label="পছন্দের তালিকা">
+    <button className={`fav-btn ${active ? 'active' : ''}`} style={{ zIndex: 2 }} onClick={onClick} aria-label="পছন্দের তালিকা">
       {active ? '♥' : '♡'}
     </button>
   )
@@ -463,12 +448,12 @@ function FavButton({ active, onClick }) {
 function Plate({ image, alt, icon }) {
   if (image) {
     return (
-      <div className="plate plate--photo" style={PHOTO_FRAME_STYLE}>
+      <div className="photo-fill" style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, overflow: 'hidden', zIndex: 0 }}>
         <img
           src={image}
           alt={alt}
           loading="lazy"
-          style={{ display: 'block', width: '100%', height: '100%', objectFit: PHOTO_FIT }}
+          style={{ display: 'block', width: '100%', height: '100%', maxWidth: 'none', maxHeight: 'none', objectFit: PHOTO_FIT, borderRadius: 0, boxShadow: 'none' }}
         />
       </div>
     )
@@ -544,7 +529,7 @@ function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, m
                 goPage('menu')
               }}
             >
-              <div className="category-card__image">
+              <div className="category-card__image" style={{ position: 'relative', overflow: 'hidden' }}>
                 <Plate image={c.image} alt={c.name} icon={c.icon} />
               </div>
               <div className="category-card__label"><p>{c.name}</p></div>
@@ -560,7 +545,7 @@ function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, m
             const price = item.sizes ? Object.values(item.sizes)[0] : item.price
             return (
               <div className="bestseller-card reveal" key={item.id} style={{ transitionDelay: `${i * 0.08}s` }}>
-                <div className="bestseller-card__image">
+                <div className="bestseller-card__image" style={{ position: 'relative', overflow: 'hidden' }}>
                   <ItemPlate item={item} categories={categories} />
                   <FavButton active={favorites.has(item.id)} onClick={(e) => toggleFav(item.id, e)} />
                 </div>
@@ -637,9 +622,9 @@ function MenuPage({
           const price = priceOf(item, size)
           return (
             <div className="item-card reveal" key={item.id} style={{ transitionDelay: `${Math.min(i * 0.05, 0.5)}s` }}>
-              <div className="item-card__image">
+              <div className="item-card__image" style={{ position: 'relative', overflow: 'hidden' }}>
                 {item.isSpecial && (
-                  <span className="special-ribbon"><Icon name="fire" /> Today's Special</span>
+                  <span className="special-ribbon" style={{ zIndex: 2 }}><Icon name="fire" /> Today's Special</span>
                 )}
                 <ItemPlate item={item} categories={categories} />
                 <FavButton active={favorites.has(item.id)} onClick={(e) => toggleFav(item.id, e)} />
