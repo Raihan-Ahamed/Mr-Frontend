@@ -18,6 +18,24 @@ const CONFETTI_COLORS = ['#0b4fa8', '#e53935', '#ffc107', '#c9a24b', '#25D366']
 const SIZE_ORDER = ['reg', 'med', 'lar']
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:4000').replace(/\/$/, '')
 
+// Photo fills the WHOLE card image area (no small circle / no frame)
+const PHOTO_FRAME_STYLE = {
+  width: '100%',
+  height: '100%',
+  maxWidth: 'none',
+  maxHeight: 'none',
+  aspectRatio: 'auto',
+  margin: 0,
+  padding: 0,
+  border: 'none',
+  borderRadius: 0,
+  boxShadow: 'none',
+  background: 'none',
+  overflow: 'hidden',
+}
+// 'cover' = card fully filled (edges may crop). Change to 'contain' to show the whole image uncropped.
+const PHOTO_FIT = 'cover'
+
 const fmt = (n) => '৳' + n
 const priceOf = (item, size) => (item.sizes ? item.sizes[size] : item.price)
 const lineKeyOf = (item, size) => (size ? `${item.id}-${size}` : item.id)
@@ -441,23 +459,31 @@ function FavButton({ active, onClick }) {
   )
 }
 
+// Full-size photo (fills the whole card image area) or an emoji plate when there is no photo
+function Plate({ image, alt, icon }) {
+  if (image) {
+    return (
+      <div className="plate plate--photo" style={PHOTO_FRAME_STYLE}>
+        <img
+          src={image}
+          alt={alt}
+          loading="lazy"
+          style={{ display: 'block', width: '100%', height: '100%', objectFit: PHOTO_FIT }}
+        />
+      </div>
+    )
+  }
+  return (
+    <div className="plate">
+      <span className="emoji">{icon}</span>
+    </div>
+  )
+}
+
 // Item photo from admin panel, or the category emoji when no photo is uploaded
 function ItemPlate({ item, categories }) {
   const icon = (categories.find((c) => c.id === item.category) || {}).icon || '🍽️'
-  return (
-    <div className="plate">
-      {item.image ? (
-        <img
-          src={item.image}
-          alt={item.name}
-          loading="lazy"
-          style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}
-        />
-      ) : (
-        <span className="emoji">{icon}</span>
-      )}
-    </div>
-  )
+  return <Plate image={item.image} alt={item.name} icon={icon} />
 }
 
 function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, menu, categories }) {
@@ -519,17 +545,7 @@ function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, m
               }}
             >
               <div className="category-card__image">
-                <div className="plate">
-                  {c.image ? (
-                    <img
-                      src={c.image}
-                      alt={c.name}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}
-                    />
-                  ) : (
-                    <span className="emoji">{c.icon}</span>
-                  )}
-                </div>
+                <Plate image={c.image} alt={c.name} icon={c.icon} />
               </div>
               <div className="category-card__label"><p>{c.name}</p></div>
             </div>
