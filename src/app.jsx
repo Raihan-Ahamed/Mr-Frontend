@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import './styles.css'
-import { categories, menuItems, deliveryZones, bestSellerIds, sizeLabel } from './data'
+import {
+  categories as staticCategories,
+  menuItems as staticMenu,
+  deliveryZones as staticZones,
+  bestSellerIds as staticBestIds,
+  sizeLabel,
+} from './data'
 
 /* ---------------- CONSTANTS & HELPERS ---------------- */
 const PHONE_LABEL = '+880 1334-001133'
@@ -8,15 +14,71 @@ const TEL_LINK = 'tel:+8801334001133'
 const WHATSAPP_LINK = 'https://wa.me/8801334001133'
 const FACEBOOK_LINK = 'https://www.facebook.com/share/1KNz2xF86D/'
 const ADDRESS = 'Chawkbazar, K.B Aman Ali Road, Chittagong'
-const SPECIAL_IDS = ['p1', 'p18', 'b6', 'mb5', 'w2']
 const CONFETTI_COLORS = ['#0b4fa8', '#e53935', '#ffc107', '#c9a24b', '#25D366']
+const SIZE_ORDER = ['reg', 'med', 'lar']
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:4000').replace(/\/$/, '')
 
 const fmt = (n) => '৳' + n
-const categoryIcon = (categoryId) => (categories.find((c) => c.id === categoryId) || {}).icon || '🍽️'
 const priceOf = (item, size) => (item.sizes ? item.sizes[size] : item.price)
 const lineKeyOf = (item, size) => (size ? `${item.id}-${size}` : item.id)
-const defaultSize = (item, selectedSizes) =>
-  item.sizes ? selectedSizes[item.id] || Object.keys(item.sizes)[0] : null
+const defaultSize = (item, selectedSizes) => {
+  if (!item.sizes) return null
+  const picked = selectedSizes[item.id]
+  return picked && item.sizes[picked] ? picked : Object.keys(item.sizes)[0]
+}
+
+// Image path from backend (relative or absolute) -> full URL
+const resolveImg = (src) => {
+  if (!src) return ''
+  if (/^(https?:|data:|blob:)/i.test(src)) return src
+  return API_URL + (src.startsWith('/') ? '' : '/') + src
+}
+
+const listFrom = (data, ...keys) => {
+  if (Array.isArray(data)) return data
+  for (const k of keys) if (data && Array.isArray(data[k])) return data[k]
+  return []
+}
+
+/* ---- normalizers: backend shape -> shape the UI uses ---- */
+function normalizeCategory(c) {
+  return {
+    id: String(c.id || c._id),
+    name: c.name || '',
+    icon: c.icon || '🍽️',
+    image: resolveImg(c.image),
+    order: Number(c.order) || 0,
+  }
+}
+
+function normalizeZone(z) {
+  return { id: String(z.id || z._id), name: z.name || '', charge: Number(z.charge) || 0 }
+}
+
+function normalizeItem(m) {
+  let sizes
+  if (m.sizes && typeof m.sizes === 'object') {
+    const entries = SIZE_ORDER.filter((k) => Number(m.sizes[k]) > 0).map((k) => [k, Number(m.sizes[k])])
+    if (entries.length) sizes = Object.fromEntries(entries)
+  }
+  const cat = m.category && typeof m.category === 'object' ? m.category.id || m.category._id : m.category
+  return {
+    ...m,
+    id: String(m.id || m._id),
+    category: String(cat || ''),
+    name: m.name || '',
+    desc: m.desc || m.description || '',
+    caption: m.caption || '',
+    image: resolveImg(m.image || m.img || m.imageUrl || m.photo),
+    sizes,
+    price: Number(m.price) || 0,
+    available: m.isAvailable !== false && m.available !== false,
+    isBestSeller: !!m.isBestSeller,
+    isSpecial: !!m.isSpecial,
+    rating: Number(m.rating) || 0,
+    ratingCount: Number(m.ratingCount) || 0,
+  }
+}
 
 // Open 4:00 PM – 4:00 AM
 const isShopOpen = () => {
@@ -24,7 +86,6 @@ const isShopOpen = () => {
   return h >= 16 || h < 4
 }
 
-// Button "press" feedback: green -> orange for a moment, then run the action
 function pressThen(e, fn) {
   const btn = e.currentTarget
   if (btn.dataset.busy) return
@@ -37,8 +98,7 @@ function pressThen(e, fn) {
   }, 380)
 }
 
-/* ---------------- BACKEND HOOK-UP ---------------- */
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+/* ---------------- BACKEND ---------------- */
 async function sendOrder(order) {
   const res = await fetch(`${API_URL}/api/orders`, {
     method: 'POST',
@@ -46,6 +106,12 @@ async function sendOrder(order) {
     body: JSON.stringify(order),
   })
   if (!res.ok) throw new Error('Order failed')
+  return res.json()
+}
+
+async function getJSON(path) {
+  const res = await fetch(`${API_URL}${path}`)
+  if (!res.ok) throw new Error(path + ' ' + res.status)
   return res.json()
 }
 
@@ -59,7 +125,6 @@ function useOpenStatus() {
   return open
 }
 
-// Fades elements in (.reveal / .reveal-scale) once they scroll into view
 function useReveal(deps) {
   const observerRef = useRef(null)
   useEffect(() => {
@@ -69,7 +134,7 @@ function useReveal(deps) {
           entries.forEach((en) => {
             if (en.isIntersecting) {
               en.target.classList.add('visible')
-              observerRef.current.unobserve(en.target)
+              observerRef.current && observerRef.current.unobserve(en.target)
             }
           })
         },
@@ -81,10 +146,17 @@ function useReveal(deps) {
       .forEach((el) => observerRef.current.observe(el))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
-  useEffect(() => () => observerRef.current && observerRef.current.disconnect(), [])
+  useEffect(
+    () => () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect()
+        observerRef.current = null
+      }
+    },
+    []
+  )
 }
 
-// Ripple effect on buttons / chips (pure DOM effect, no state)
 function useRipple() {
   useEffect(() => {
     const onClick = (e) => {
@@ -188,6 +260,7 @@ function BackToTop() {
       className={`fab-top ${show ? 'show' : ''}`}
       onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
       title="উপরে যান"
+      aria-label="উপরে যান"
     >
       ↑
     </button>
@@ -226,7 +299,7 @@ function Navbar({ navOpen, setNavOpen, goPage, cartCount, cartPulse, openDrawer 
           <nav className={`navbar__links ${navOpen ? 'open' : ''}`}>
             <div className="nav-header">
               <span>মেন্যু</span>
-              <button className="nav-close" onClick={() => setNavOpen(false)}>
+              <button className="nav-close" onClick={() => setNavOpen(false)} aria-label="বন্ধ করুন">
                 <Icon name="close" />
               </button>
             </div>
@@ -260,11 +333,15 @@ function Navbar({ navOpen, setNavOpen, goPage, cartCount, cartPulse, openDrawer 
           </nav>
 
           <div className="navbar__actions">
-            <button className={`cart-btn ${cartPulse ? 'pulse' : ''}`} onClick={openDrawer}>
+            <button className={`cart-btn ${cartPulse ? 'pulse' : ''}`} onClick={openDrawer} aria-label="কার্ট">
               <span className="cart-btn__ripple-zone"><Icon name="cart" /></span>
               {cartCount > 0 && <span className="cart-btn__badge">{cartCount}</span>}
             </button>
-            <button className={`hamburger ${navOpen ? 'active' : ''}`} onClick={() => setNavOpen((v) => !v)}>
+            <button
+              className={`hamburger ${navOpen ? 'active' : ''}`}
+              onClick={() => setNavOpen((v) => !v)}
+              aria-label="মেন্যু"
+            >
               <span /><span /><span />
             </button>
           </div>
@@ -282,7 +359,7 @@ function Drawer({ open, onClose, cart, subtotal, changeQty, removeItem, onChecko
       <aside className={`drawer ${open ? 'open' : ''}`}>
         <div className="drawer__head">
           <h3>আপনার অর্ডার</h3>
-          <button className="drawer__close" onClick={onClose}><Icon name="close" /></button>
+          <button className="drawer__close" onClick={onClose} aria-label="বন্ধ করুন"><Icon name="close" /></button>
         </div>
         <div className="drawer__list">
           {cart.length === 0 ? (
@@ -299,7 +376,7 @@ function Drawer({ open, onClose, cart, subtotal, changeQty, removeItem, onChecko
                   <button onClick={() => changeQty(l.lineKey, -1)}>−</button>
                   <span>{l.qty}</span>
                   <button onClick={() => changeQty(l.lineKey, 1)}>+</button>
-                  <button className="drawer__remove" onClick={() => removeItem(l.lineKey)}>
+                  <button className="drawer__remove" onClick={() => removeItem(l.lineKey)} aria-label="মুছুন">
                     <Icon name="trash" />
                   </button>
                 </div>
@@ -358,13 +435,38 @@ function Footer() {
 /* ---------------- PAGES ---------------- */
 function FavButton({ active, onClick }) {
   return (
-    <button className={`fav-btn ${active ? 'active' : ''}`} onClick={onClick}>
+    <button className={`fav-btn ${active ? 'active' : ''}`} onClick={onClick} aria-label="পছন্দের তালিকা">
       {active ? '♥' : '♡'}
     </button>
   )
 }
 
-function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, menu }) {
+// Item photo from admin panel, or the category emoji when no photo is uploaded
+function ItemPlate({ item, categories }) {
+  const icon = (categories.find((c) => c.id === item.category) || {}).icon || '🍽️'
+  return (
+    <div className="plate">
+      {item.image ? (
+        <img
+          src={item.image}
+          alt={item.name}
+          loading="lazy"
+          style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}
+        />
+      ) : (
+        <span className="emoji">{icon}</span>
+      )}
+    </div>
+  )
+}
+
+function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, menu, categories }) {
+  const bestSellers = useMemo(() => {
+    const flagged = menu.filter((m) => m.isBestSeller)
+    if (flagged.length) return flagged
+    return staticBestIds.map((id) => menu.find((m) => m.id === id)).filter(Boolean)
+  }, [menu])
+
   return (
     <main>
       <section className="hero">
@@ -412,12 +514,22 @@ function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, m
               className="category-card reveal-scale"
               style={{ transitionDelay: `${Math.min(i * 0.05, 0.4)}s` }}
               onClick={() => {
-                goPage('menu')
                 selectCategory(c.id)
+                goPage('menu')
               }}
             >
               <div className="category-card__image">
-                <div className="plate"><span className="emoji">{c.icon}</span></div>
+                <div className="plate">
+                  {c.image ? (
+                    <img
+                      src={c.image}
+                      alt={c.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}
+                    />
+                  ) : (
+                    <span className="emoji">{c.icon}</span>
+                  )}
+                </div>
               </div>
               <div className="category-card__label"><p>{c.name}</p></div>
             </div>
@@ -428,25 +540,19 @@ function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, m
       <section className="section">
         <h2 className="reveal">জনপ্রিয় আইটেম</h2>
         <div className="bestsellers-grid">
-          {bestSellerIds.map((id, i) => {
-            const item = menu.find((m) => m.id === id)
-            if (!item) return null
+          {bestSellers.map((item, i) => {
             const price = item.sizes ? Object.values(item.sizes)[0] : item.price
             return (
-              <div className="bestseller-card reveal" key={id} style={{ transitionDelay: `${i * 0.08}s` }}>
+              <div className="bestseller-card reveal" key={item.id} style={{ transitionDelay: `${i * 0.08}s` }}>
                 <div className="bestseller-card__image">
-                  <div className="plate">
-  {item.image
-    ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-    : <span className="emoji">{categoryIcon(item.category)}</span>}
-</div>
+                  <ItemPlate item={item} categories={categories} />
                   <FavButton active={favorites.has(item.id)} onClick={(e) => toggleFav(item.id, e)} />
                 </div>
                 <div className="bestseller-card__body">
                   <h4>{item.name}</h4>
                   <p>{item.desc}</p>
                   <div className="bestseller-card__footer">
-                    <span className="price">{fmt(price)}+</span>
+                    <span className="price">{fmt(price)}{item.sizes ? '+' : ''}</span>
                     <button className="btn btn--order" onClick={(e) => singleOrder(item.id, e)}>অর্ডার করুন</button>
                   </div>
                 </div>
@@ -470,8 +576,21 @@ function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, m
   )
 }
 
+function Stars({ rating, count }) {
+  const full = Math.round(rating)
+  return (
+    <div className="stars">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <span className="star" key={n}>{n <= full ? '★' : '☆'}</span>
+      ))}
+      <span className="num">{rating.toFixed(1)}</span>
+      {count > 0 && <span className="num"> ({count})</span>}
+    </div>
+  )
+}
+
 function MenuPage({
-  activeCategory, selectCategory, search, setSearch, items,
+  categories, activeCategory, selectCategory, search, setSearch, items,
   selectedSizes, selectSize, favorites, toggleFav, handleAdd, addedId, singleOrder,
 }) {
   return (
@@ -487,8 +606,8 @@ function MenuPage({
         {categories.map((c) => (
           <button
             key={c.id}
-            className={`category-chip ${c.id === activeCategory ? 'active' : ''}`}
-            onClick={() => selectCategory(c.id)}
+            className={`category-chip ${!search && c.id === activeCategory ? 'active' : ''}`}
+            onClick={() => { setSearch(''); selectCategory(c.id) }}
           >
             <span>{c.icon}</span>{c.name}
           </button>
@@ -500,27 +619,21 @@ function MenuPage({
           const sizeKeys = item.sizes ? Object.keys(item.sizes) : null
           const size = defaultSize(item, selectedSizes)
           const price = priceOf(item, size)
-          const rating = (4.3 + (item.id.charCodeAt(0) % 6) * 0.1).toFixed(1)
           return (
             <div className="item-card reveal" key={item.id} style={{ transitionDelay: `${Math.min(i * 0.05, 0.5)}s` }}>
               <div className="item-card__image">
-                {SPECIAL_IDS.includes(item.id) && (
+                {item.isSpecial && (
                   <span className="special-ribbon"><Icon name="fire" /> Today's Special</span>
                 )}
-              <div className="plate">
-  {item.image
-    ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-    : <span className="emoji">{categoryIcon(item.category)}</span>}
-</div>
+                <ItemPlate item={item} categories={categories} />
                 <FavButton active={favorites.has(item.id)} onClick={(e) => toggleFav(item.id, e)} />
               </div>
               <div className="item-card__body">
                 <h4>{item.name}</h4>
-                <div className="stars">
-                  <span className="star">★</span><span className="star">★</span><span className="star">★</span>
-                  <span className="star">★</span><span className="star">☆</span>
-                  <span className="num">{rating}</span>
-                </div>
+                {item.rating > 0 && <Stars rating={item.rating} count={item.ratingCount} />}
+                {item.caption && (
+                  <p style={{ color: '#c9a24b', fontStyle: 'italic', fontSize: '.85rem' }}>"{item.caption}"</p>
+                )}
                 <p>{item.desc}</p>
                 {sizeKeys && (
                   <div className="item-card__sizes">
@@ -558,7 +671,7 @@ function MenuPage({
   )
 }
 
-function CheckoutPage({ cart, form, setForm, zone, total, submitting, onSubmit, goPage }) {
+function CheckoutPage({ cart, form, setForm, zones, zone, total, submitting, onSubmit, goPage }) {
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
   return (
     <main className="checkout-page">
@@ -581,7 +694,15 @@ function CheckoutPage({ cart, form, setForm, zone, total, submitting, onSubmit, 
             </label>
             <label>
               <Icon name="mobile" /> মোবাইল নম্বর
-              <input required type="tel" placeholder="01XXXXXXXXX" value={form.phone} onChange={update('phone')} />
+              <input
+                required
+                type="tel"
+                placeholder="01XXXXXXXXX"
+                pattern="(\+?88)?01[3-9][0-9]{8}"
+                title="সঠিক বাংলাদেশি মোবাইল নম্বর দিন (যেমন 01712345678)"
+                value={form.phone}
+                onChange={update('phone')}
+              />
             </label>
             <label>
               <Icon name="pin" /> ঠিকানা
@@ -589,8 +710,8 @@ function CheckoutPage({ cart, form, setForm, zone, total, submitting, onSubmit, 
             </label>
             <label>
               <Icon name="bike" /> ডেলিভারি এলাকা
-              <select value={form.zoneId} onChange={update('zoneId')}>
-                {deliveryZones.map((z) => (
+              <select value={zone.id} onChange={update('zoneId')}>
+                {zones.map((z) => (
                   <option key={z.id} value={z.id}>
                     {z.name} {z.charge > 0 ? `(+৳${z.charge})` : '(ফ্রি)'}
                   </option>
@@ -645,28 +766,26 @@ function ConfirmedPage({ confirmed, goPage }) {
         <p>{confirmed.name ? `ধন্যবাদ, ${confirmed.name}!` : ''}</p>
         <p>{`মোট বিল: ${fmt(confirmed.total)}`}</p>
         <p className="confirmed-note">
-          আমাদের টিম শীঘ্রই আপনার সাথে যোগাযোগ করবে। এই মুহূর্তে অর্ডার ম্যানুয়ালি প্রসেস হচ্ছে — ব্যাকএন্ড চালু হলে এটি সরাসরি ড্যাশবোর্ড ও Telegram-এ চলে যাবে।
+          আমাদের টিম শীঘ্রই আপনার সাথে যোগাযোগ করে অর্ডার কনফার্ম করবে।
         </p>
         <a className="btn" href="#" onClick={(e) => { e.preventDefault(); goPage('menu') }}>আবার অর্ডার করুন</a>
       </div>
     </main>
   )
 }
-function normalizeItem(m) {
-  return {
-    ...m,
-    id: String(m.id || m._id),
-    image: m.image || m.img || m.imageUrl || m.photo || '',
-    desc: m.desc || m.description || '',
-  }
-}
+
 /* ---------------- APP ---------------- */
 export default function App() {
   const [page, setPage] = useState('home') // home | menu | checkout | confirmed
-  const [cart, setCart] = useState([]) // {lineKey,id,name,price,size,qty}
-  const [activeCategory, setActiveCategory] = useState(categories[0].id)
-  const [selectedSizes, setSelectedSizes] = useState({}) // itemId -> size key
-  const [favorites, setFavorites] = useState(() => new Set())
+  const [cart, setCart] = useState([])
+  const [selectedSizes, setSelectedSizes] = useState({})
+  const [favorites, setFavorites] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('mrd_favs') || '[]'))
+    } catch {
+      return new Set()
+    }
+  })
   const [search, setSearch] = useState('')
   const [navOpen, setNavOpen] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -677,39 +796,90 @@ export default function App() {
   const [confetti, setConfetti] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [confirmed, setConfirmed] = useState({ name: '', total: 0 })
-  const [menu, setMenu] = useState(menuItems)
 
-useEffect(() => {
-  fetch(`${API_URL}/api/menu`)
-    .then((r) => r.json())
-    .then((data) => {
-      const list = Array.isArray(data) ? data : data.items || data.menu || []
-      if (list.length) setMenu(list.filter((m) => m.available !== false).map(normalizeItem))
-    })
-    .catch(() => {})
-}, [])
+  // ---- data that the admin panel controls (static data = fallback only) ----
+  const [categories, setCategories] = useState(staticCategories)
+  const [menu, setMenu] = useState(() => staticMenu.map(normalizeItem))
+  const [zones, setZones] = useState(staticZones)
+
+  const [activeCategory, setActiveCategory] = useState(staticCategories[0].id)
   const [form, setForm] = useState({
-    name: '', phone: '', address: '', zoneId: deliveryZones[0].id, note: '',
+    name: '', phone: '', address: '', zoneId: staticZones[0].id, note: '',
   })
 
   const toastId = useRef(0)
   const pulseTimer = useRef(null)
 
+  // Load menu + categories + zones from the backend, and keep them fresh
+  const loadRemote = useCallback(async () => {
+    const [m, c, z] = await Promise.allSettled([
+      getJSON('/api/menu'),
+      getJSON('/api/settings/categories'),
+      getJSON('/api/settings/zones'),
+    ])
+    if (m.status === 'fulfilled') {
+      const list = listFrom(m.value, 'items', 'menu')
+      if (list.length) setMenu(list.map(normalizeItem).filter((i) => i.available))
+    }
+    if (c.status === 'fulfilled') {
+      const list = listFrom(c.value, 'categories', 'items')
+        .filter((x) => x.isActive !== false)
+        .map(normalizeCategory)
+      if (list.length) setCategories(list)
+    }
+    if (z.status === 'fulfilled') {
+      const list = listFrom(z.value, 'zones', 'items')
+        .filter((x) => x.isActive !== false)
+        .map(normalizeZone)
+      if (list.length) setZones(list)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadRemote()
+    const timer = setInterval(loadRemote, 60000)
+    const onFocus = () => loadRemote()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [loadRemote])
+
+  // Keep selections valid if admin deleted/renamed a category or zone
+  useEffect(() => {
+    if (categories.length && !categories.some((c) => c.id === activeCategory)) {
+      setActiveCategory(categories[0].id)
+    }
+  }, [categories, activeCategory])
+
+  useEffect(() => {
+    if (zones.length && !zones.some((z) => z.id === form.zoneId)) {
+      setForm((f) => ({ ...f, zoneId: zones[0].id }))
+    }
+  }, [zones, form.zoneId])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('mrd_favs', JSON.stringify([...favorites]))
+    } catch { /* ignore */ }
+  }, [favorites])
+
   useRipple()
-  useReveal([page, activeCategory, search])
+  useReveal([page, activeCategory, search, menu, categories])
 
   /* derived values */
   const cartCount = cart.reduce((s, l) => s + l.qty, 0)
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
-  const zone = deliveryZones.find((z) => z.id === form.zoneId) || deliveryZones[0]
+  const zone = zones.find((z) => z.id === form.zoneId) || zones[0] || { id: '', name: '', charge: 0 }
   const total = subtotal + zone.charge
 
   const visibleItems = useMemo(() => {
     const q = search.toLowerCase().trim()
-    let list = menu.filter((m) => m.category === activeCategory)
-    if (q) list = list.filter((m) => m.name.toLowerCase().includes(q))
-    return list
-  }, [activeCategory, search, menu])
+    // when searching, look through ALL categories
+    if (q) return menu.filter((m) => m.name.toLowerCase().includes(q) && categories.some((c) => c.id === m.category))
+    return menu.filter((m) => m.category === activeCategory)
+  }, [activeCategory, search, menu, categories])
 
   /* helpers */
   const showToast = useCallback((msg, icon = 'check') => {
@@ -771,6 +941,7 @@ useEffect(() => {
   /* cart */
   const addToCart = (itemId) => {
     const item = menu.find((m) => m.id === itemId)
+    if (!item) return
     const size = defaultSize(item, selectedSizes)
     const price = priceOf(item, size)
     const lineKey = lineKeyOf(item, size)
@@ -784,8 +955,9 @@ useEffect(() => {
   }
 
   const handleAdd = (itemId) => {
-    addToCart(itemId)
     const item = menu.find((m) => m.id === itemId)
+    if (!item) return
+    addToCart(itemId)
     showToast(`${item.name} কার্টে যোগ হয়েছে`, 'cart')
     setAddedId(itemId)
     setTimeout(() => setAddedId((cur) => (cur === itemId ? null : cur)), 700)
@@ -801,7 +973,8 @@ useEffect(() => {
   const removeItem = (lineKey) => setCart((prev) => prev.filter((l) => l.lineKey !== lineKey))
 
   const doSingleOrder = (itemId) => {
-    const item = menuItems.find((m) => m.id === itemId)
+    const item = menu.find((m) => m.id === itemId)
+    if (!item) return
     const size = defaultSize(item, selectedSizes)
     setCart([{ lineKey: lineKeyOf(item, size), id: item.id, name: item.name, price: priceOf(item, size), size, qty: 1 }])
     showToast(`${item.name} নিয়ে চেকআউটে যাচ্ছেন`, 'bolt')
@@ -821,7 +994,7 @@ useEffect(() => {
     if (cart.length === 0 || submitting) return
     const order = {
       customer: { name: form.name, phone: form.phone, address: form.address, note: form.note },
-      items: cart,
+      items: cart.map((l) => ({ ...l, subtotal: l.price * l.qty })),
       zone,
       deliveryCharge: zone.charge,
       subtotal,
@@ -876,11 +1049,13 @@ useEffect(() => {
           toggleFav={toggleFav}
           singleOrder={singleOrder}
           menu={menu}
+          categories={categories}
         />
       </div>
 
       <div className={`page ${page === 'menu' ? 'active' : ''}`} id="page-menu">
         <MenuPage
+          categories={categories}
           activeCategory={activeCategory}
           selectCategory={selectCategory}
           search={search}
@@ -901,6 +1076,7 @@ useEffect(() => {
           cart={cart}
           form={form}
           setForm={setForm}
+          zones={zones}
           zone={zone}
           total={total}
           submitting={submitting}
