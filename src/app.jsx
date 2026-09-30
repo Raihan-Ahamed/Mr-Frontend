@@ -364,7 +364,7 @@ function FavButton({ active, onClick }) {
   )
 }
 
-function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder }) {
+function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, menu }) {
   return (
     <main>
       <section className="hero">
@@ -429,13 +429,17 @@ function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder })
         <h2 className="reveal">জনপ্রিয় আইটেম</h2>
         <div className="bestsellers-grid">
           {bestSellerIds.map((id, i) => {
-            const item = menuItems.find((m) => m.id === id)
+            const item = menu.find((m) => m.id === id)
             if (!item) return null
             const price = item.sizes ? Object.values(item.sizes)[0] : item.price
             return (
               <div className="bestseller-card reveal" key={id} style={{ transitionDelay: `${i * 0.08}s` }}>
                 <div className="bestseller-card__image">
-                  <div className="plate"><span className="emoji">{categoryIcon(item.category)}</span></div>
+                  <div className="plate">
+  {item.image
+    ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+    : <span className="emoji">{categoryIcon(item.category)}</span>}
+</div>
                   <FavButton active={favorites.has(item.id)} onClick={(e) => toggleFav(item.id, e)} />
                 </div>
                 <div className="bestseller-card__body">
@@ -503,7 +507,11 @@ function MenuPage({
                 {SPECIAL_IDS.includes(item.id) && (
                   <span className="special-ribbon"><Icon name="fire" /> Today's Special</span>
                 )}
-                <div className="plate"><span className="emoji">{categoryIcon(item.category)}</span></div>
+              <div className="plate">
+  {item.image
+    ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+    : <span className="emoji">{categoryIcon(item.category)}</span>}
+</div>
                 <FavButton active={favorites.has(item.id)} onClick={(e) => toggleFav(item.id, e)} />
               </div>
               <div className="item-card__body">
@@ -644,7 +652,14 @@ function ConfirmedPage({ confirmed, goPage }) {
     </main>
   )
 }
-
+function normalizeItem(m) {
+  return {
+    ...m,
+    id: String(m.id || m._id),
+    image: m.image || m.img || m.imageUrl || m.photo || '',
+    desc: m.desc || m.description || '',
+  }
+}
 /* ---------------- APP ---------------- */
 export default function App() {
   const [page, setPage] = useState('home') // home | menu | checkout | confirmed
@@ -662,6 +677,17 @@ export default function App() {
   const [confetti, setConfetti] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [confirmed, setConfirmed] = useState({ name: '', total: 0 })
+  const [menu, setMenu] = useState(menuItems)
+
+useEffect(() => {
+  fetch(`${API_URL}/api/menu`)
+    .then((r) => r.json())
+    .then((data) => {
+      const list = Array.isArray(data) ? data : data.items || data.menu || []
+      if (list.length) setMenu(list.filter((m) => m.available !== false).map(normalizeItem))
+    })
+    .catch(() => {})
+}, [])
   const [form, setForm] = useState({
     name: '', phone: '', address: '', zoneId: deliveryZones[0].id, note: '',
   })
@@ -680,10 +706,10 @@ export default function App() {
 
   const visibleItems = useMemo(() => {
     const q = search.toLowerCase().trim()
-    let list = menuItems.filter((m) => m.category === activeCategory)
+    let list = menu.filter((m) => m.category === activeCategory)
     if (q) list = list.filter((m) => m.name.toLowerCase().includes(q))
     return list
-  }, [activeCategory, search])
+  }, [activeCategory, search, menu])
 
   /* helpers */
   const showToast = useCallback((msg, icon = 'check') => {
@@ -744,7 +770,7 @@ export default function App() {
 
   /* cart */
   const addToCart = (itemId) => {
-    const item = menuItems.find((m) => m.id === itemId)
+    const item = menu.find((m) => m.id === itemId)
     const size = defaultSize(item, selectedSizes)
     const price = priceOf(item, size)
     const lineKey = lineKeyOf(item, size)
@@ -759,7 +785,7 @@ export default function App() {
 
   const handleAdd = (itemId) => {
     addToCart(itemId)
-    const item = menuItems.find((m) => m.id === itemId)
+    const item = menu.find((m) => m.id === itemId)
     showToast(`${item.name} কার্টে যোগ হয়েছে`, 'cart')
     setAddedId(itemId)
     setTimeout(() => setAddedId((cur) => (cur === itemId ? null : cur)), 700)
@@ -849,6 +875,7 @@ export default function App() {
           favorites={favorites}
           toggleFav={toggleFav}
           singleOrder={singleOrder}
+          menu={menu}
         />
       </div>
 
