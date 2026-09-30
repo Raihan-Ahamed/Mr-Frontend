@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import './styles.css'
-import { categories as fallbackCategories, menuItems as fallbackMenuItems, deliveryZones as fallbackDeliveryZones, bestSellerIds, sizeLabel } from './data'
+import { categories, menuItems, deliveryZones, bestSellerIds, sizeLabel } from './data'
 
 /* ---------------- CONSTANTS & HELPERS ---------------- */
 const PHONE_LABEL = '+880 1334-001133'
@@ -12,6 +12,7 @@ const SPECIAL_IDS = ['p1', 'p18', 'b6', 'mb5', 'w2']
 const CONFETTI_COLORS = ['#0b4fa8', '#e53935', '#ffc107', '#c9a24b', '#25D366']
 
 const fmt = (n) => '৳' + n
+const categoryIcon = (categoryId) => (categories.find((c) => c.id === categoryId) || {}).icon || '🍽️'
 const priceOf = (item, size) => (item.sizes ? item.sizes[size] : item.price)
 const lineKeyOf = (item, size) => (size ? `${item.id}-${size}` : item.id)
 const defaultSize = (item, selectedSizes) =>
@@ -38,7 +39,6 @@ function pressThen(e, fn) {
 
 /* ---------------- BACKEND HOOK-UP ---------------- */
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
-
 async function sendOrder(order) {
   const res = await fetch(`${API_URL}/api/orders`, {
     method: 'POST',
@@ -47,36 +47,6 @@ async function sendOrder(order) {
   })
   if (!res.ok) throw new Error('Order failed')
   return res.json()
-}
-
-// Normalize a menu item coming from the backend so field names always match
-// what the UI expects, regardless of what the API/DB calls them.
-function normalizeItem(m) {
-  return {
-    ...m,
-    id: String(m.id || m._id),
-    category: m.category || m.categoryId || m.category_id || '',
-    image: m.image || m.img || m.imageUrl || m.photo || '',
-    desc: m.desc || m.description || '',
-    // sizes may come back with null values for unset sizes (e.g. { reg: null, med: 599, lar: 799 })
-    sizes: m.sizes
-      ? Object.fromEntries(Object.entries(m.sizes).filter(([, v]) => v !== null && v !== undefined && v !== ''))
-      : undefined,
-  }
-}
-function normalizeCategory(c) {
-  return {
-    id: String(c.id || c._id),
-    name: c.name,
-    icon: c.icon || '🍽️',
-  }
-}
-function normalizeZone(z) {
-  return {
-    id: String(z.id || z._id),
-    name: z.name,
-    charge: Number(z.charge) || 0,
-  }
 }
 
 /* ---------------- SMALL HOOKS ---------------- */
@@ -394,7 +364,7 @@ function FavButton({ active, onClick }) {
   )
 }
 
-function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, menu, categories, categoryIcon }) {
+function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, menu }) {
   return (
     <main>
       <section className="hero">
@@ -466,10 +436,10 @@ function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, m
               <div className="bestseller-card reveal" key={id} style={{ transitionDelay: `${i * 0.08}s` }}>
                 <div className="bestseller-card__image">
                   <div className="plate">
-                    {item.image
-                      ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-                      : <span className="emoji">{categoryIcon(item.category)}</span>}
-                  </div>
+  {item.image
+    ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+    : <span className="emoji">{categoryIcon(item.category)}</span>}
+</div>
                   <FavButton active={favorites.has(item.id)} onClick={(e) => toggleFav(item.id, e)} />
                 </div>
                 <div className="bestseller-card__body">
@@ -503,7 +473,6 @@ function HomePage({ goPage, selectCategory, favorites, toggleFav, singleOrder, m
 function MenuPage({
   activeCategory, selectCategory, search, setSearch, items,
   selectedSizes, selectSize, favorites, toggleFav, handleAdd, addedId, singleOrder,
-  categories, categoryIcon,
 }) {
   return (
     <main className="menu-page">
@@ -538,11 +507,11 @@ function MenuPage({
                 {SPECIAL_IDS.includes(item.id) && (
                   <span className="special-ribbon"><Icon name="fire" /> Today's Special</span>
                 )}
-                <div className="plate">
-                  {item.image
-                    ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-                    : <span className="emoji">{categoryIcon(item.category)}</span>}
-                </div>
+              <div className="plate">
+  {item.image
+    ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+    : <span className="emoji">{categoryIcon(item.category)}</span>}
+</div>
                 <FavButton active={favorites.has(item.id)} onClick={(e) => toggleFav(item.id, e)} />
               </div>
               <div className="item-card__body">
@@ -589,7 +558,7 @@ function MenuPage({
   )
 }
 
-function CheckoutPage({ cart, form, setForm, zone, total, submitting, onSubmit, goPage, deliveryZones }) {
+function CheckoutPage({ cart, form, setForm, zone, total, submitting, onSubmit, goPage }) {
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
   return (
     <main className="checkout-page">
@@ -683,20 +652,19 @@ function ConfirmedPage({ confirmed, goPage }) {
     </main>
   )
 }
-
+function normalizeItem(m) {
+  return {
+    ...m,
+    id: String(m.id || m._id),
+    image: m.image || m.img || m.imageUrl || m.photo || '',
+    desc: m.desc || m.description || '',
+  }
+}
 /* ---------------- APP ---------------- */
 export default function App() {
   const [page, setPage] = useState('home') // home | menu | checkout | confirmed
   const [cart, setCart] = useState([]) // {lineKey,id,name,price,size,qty}
-
-  // ── DYNAMIC DATA FROM BACKEND ──
-  // Start from the bundled fallback data so the UI has something to render
-  // immediately, then replace it with live data as soon as the backend responds.
-  const [categories, setCategories] = useState(fallbackCategories)
-  const [menu, setMenu] = useState(fallbackMenuItems)
-  const [deliveryZones, setDeliveryZones] = useState(fallbackDeliveryZones)
-
-  const [activeCategory, setActiveCategory] = useState(fallbackCategories[0].id)
+  const [activeCategory, setActiveCategory] = useState(categories[0].id)
   const [selectedSizes, setSelectedSizes] = useState({}) // itemId -> size key
   const [favorites, setFavorites] = useState(() => new Set())
   const [search, setSearch] = useState('')
@@ -709,9 +677,19 @@ export default function App() {
   const [confetti, setConfetti] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [confirmed, setConfirmed] = useState({ name: '', total: 0 })
+  const [menu, setMenu] = useState(menuItems)
 
+useEffect(() => {
+  fetch(`${API_URL}/api/menu`)
+    .then((r) => r.json())
+    .then((data) => {
+      const list = Array.isArray(data) ? data : data.items || data.menu || []
+      if (list.length) setMenu(list.filter((m) => m.available !== false).map(normalizeItem))
+    })
+    .catch(() => {})
+}, [])
   const [form, setForm] = useState({
-    name: '', phone: '', address: '', zoneId: fallbackDeliveryZones[0].id, note: '',
+    name: '', phone: '', address: '', zoneId: deliveryZones[0].id, note: '',
   })
 
   const toastId = useRef(0)
@@ -720,66 +698,11 @@ export default function App() {
   useRipple()
   useReveal([page, activeCategory, search])
 
-  // Fetch everything the admin panel can change: categories, menu items, and zones.
-  const loadAllData = useCallback(async () => {
-    try {
-      const [catsRes, menuRes, zonesRes] = await Promise.all([
-        fetch(`${API_URL}/api/settings/categories`),
-        fetch(`${API_URL}/api/menu`),
-        fetch(`${API_URL}/api/settings/zones`),
-      ])
-
-      if (catsRes.ok) {
-        const data = await catsRes.json()
-        const list = Array.isArray(data) ? data : data.categories || []
-        if (list.length) {
-          const normalized = list.map(normalizeCategory)
-          setCategories(normalized)
-          // keep activeCategory valid if the current one no longer exists
-          setActiveCategory((cur) => (normalized.some((c) => c.id === cur) ? cur : normalized[0].id))
-        }
-      }
-
-      if (menuRes.ok) {
-        const data = await menuRes.json()
-        const list = Array.isArray(data) ? data : data.items || data.menu || []
-        if (list.length) {
-          setMenu(
-            list
-              .filter((m) => m.isAvailable !== false && m.available !== false)
-              .map(normalizeItem)
-          )
-        }
-      }
-
-      if (zonesRes.ok) {
-        const data = await zonesRes.json()
-        const list = Array.isArray(data) ? data : data.zones || []
-        if (list.length) {
-          const normalized = list.map(normalizeZone)
-          setDeliveryZones(normalized)
-          setForm((f) => ({ ...f, zoneId: normalized.some((z) => z.id === f.zoneId) ? f.zoneId : normalized[0].id }))
-        }
-      }
-    } catch {
-      // Backend unreachable — keep showing the bundled fallback data.
-    }
-  }, [])
-
-  useEffect(() => {
-    loadAllData()
-  }, [loadAllData])
-
   /* derived values */
   const cartCount = cart.reduce((s, l) => s + l.qty, 0)
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
   const zone = deliveryZones.find((z) => z.id === form.zoneId) || deliveryZones[0]
   const total = subtotal + zone.charge
-
-  const categoryIcon = useCallback(
-    (categoryId) => (categories.find((c) => c.id === categoryId) || {}).icon || '🍽️',
-    [categories]
-  )
 
   const visibleItems = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -848,7 +771,6 @@ export default function App() {
   /* cart */
   const addToCart = (itemId) => {
     const item = menu.find((m) => m.id === itemId)
-    if (!item) return
     const size = defaultSize(item, selectedSizes)
     const price = priceOf(item, size)
     const lineKey = lineKeyOf(item, size)
@@ -864,7 +786,6 @@ export default function App() {
   const handleAdd = (itemId) => {
     addToCart(itemId)
     const item = menu.find((m) => m.id === itemId)
-    if (!item) return
     showToast(`${item.name} কার্টে যোগ হয়েছে`, 'cart')
     setAddedId(itemId)
     setTimeout(() => setAddedId((cur) => (cur === itemId ? null : cur)), 700)
@@ -880,8 +801,7 @@ export default function App() {
   const removeItem = (lineKey) => setCart((prev) => prev.filter((l) => l.lineKey !== lineKey))
 
   const doSingleOrder = (itemId) => {
-    const item = menu.find((m) => m.id === itemId)
-    if (!item) return
+    const item = menuItems.find((m) => m.id === itemId)
     const size = defaultSize(item, selectedSizes)
     setCart([{ lineKey: lineKeyOf(item, size), id: item.id, name: item.name, price: priceOf(item, size), size, qty: 1 }])
     showToast(`${item.name} নিয়ে চেকআউটে যাচ্ছেন`, 'bolt')
@@ -956,8 +876,6 @@ export default function App() {
           toggleFav={toggleFav}
           singleOrder={singleOrder}
           menu={menu}
-          categories={categories}
-          categoryIcon={categoryIcon}
         />
       </div>
 
@@ -975,8 +893,6 @@ export default function App() {
           handleAdd={handleAdd}
           addedId={addedId}
           singleOrder={singleOrder}
-          categories={categories}
-          categoryIcon={categoryIcon}
         />
       </div>
 
@@ -990,7 +906,6 @@ export default function App() {
           submitting={submitting}
           onSubmit={submitOrder}
           goPage={goPage}
-          deliveryZones={deliveryZones}
         />
       </div>
 
